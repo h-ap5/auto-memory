@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.0
-// @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
+// @version      1.1
+// @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가 (모바일 버튼 깨짐 수정)
 // @author       User
 // @match        https://crack.wrtn.ai/*
 // @grant        none
@@ -178,8 +178,13 @@
             .ai-loading-spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-radius:50%; border-top-color:#fff; animation:spin 1s ease-in-out infinite; margin-right:8px; vertical-align:middle; }
             @keyframes spin { to { transform: rotate(360deg); } }
 
+            /* 모바일 호환성을 위해 버튼 CSS 대폭 개선 */
             .crack-ext-header-ai-btn {
-                padding: 8px 16px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0 12px;
+                height: 36px;
                 border-radius: 6px;
                 background: linear-gradient(135deg, #6e8efb, #a777e3);
                 color: white;
@@ -190,6 +195,8 @@
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 transition: transform 0.1s, opacity 0.2s;
                 letter-spacing: -0.3px;
+                white-space: nowrap; /* 줄바꿈 절대 방지 */
+                flex-shrink: 0;      /* 플렉스 박스에서 찌그러짐 방지 */
             }
             .crack-ext-header-ai-btn:hover { opacity: 0.9; transform: translateY(-1px); }
             .crack-ext-header-ai-btn:active { transform: translateY(1px); }
@@ -438,7 +445,7 @@
                 localStorage.setItem('crack_ext_custom_prompt', txtResult.value.trim());
                 txtResult.value = tempResultContent;
 
-                lblResult.textContent = '결과물 (직접 입력 및 수정 가능)';
+                lblResult.textContent = '생성 결과';
                 btnTogglePrompt.textContent = '⚙️ 프롬프트 설정';
 
                 topSettings.style.display = 'flex';
@@ -495,7 +502,11 @@
                 btnGen.textContent = "다시 시도";
             } finally {
                 btnGen.disabled = false;
-                btnGen.innerHTML = btnGen.textContent;
+                if(btnGen.textContent === "재생성 (리롤)" || btnGen.textContent === "다시 시도") {
+                    // Spinner 제거됨
+                } else {
+                    btnGen.innerHTML = btnGen.textContent; 
+                }
             }
         };
 
@@ -532,8 +543,9 @@
 
             for (let i = 0; i < memories.length; i++) {
                 btnSave.textContent = `추가 중... (${i + 1}/${memories.length})`;
-                const mem = memories[i];
+                await new Promise(resolve => setTimeout(resolve, 50)); 
 
+                const mem = memories[i];
                 const postBody = { type: 'shortTerm', title: mem.title, summary: mem.summary };
 
                 const res = await apiCall('POST', '/summaries', postBody);
