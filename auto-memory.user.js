@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.1
-// @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가 (모바일 버튼 깨짐 수정)
+// @version      1.2
+// @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
 // @grant        none
@@ -162,23 +162,27 @@
             .crack-ext-btn-delete { background:#222; color:#fff; border-color:#222; }
             .crack-ext-empty { text-align:center; padding:24px 0; color:#999; font-size:14px; }
             .crack-ext-overlay { background:rgba(0,0,0,.5); z-index:100000; pointer-events:auto !important; }
-            .crack-ext-modal { background:#fff; border-radius:16px; padding:28px; width:550px; max-width:90vw; box-shadow:0 8px 40px rgba(0,0,0,.2); pointer-events:auto !important; }
+            
+            /* 다크모드 대응을 위한 글자색 및 배경색 강제 지정 */
+            .crack-ext-modal { background:#fff; border-radius:16px; padding:28px; width:550px; max-width:90vw; box-shadow:0 8px 40px rgba(0,0,0,.2); pointer-events:auto !important; color:#222 !important;}
             .crack-ext-modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
-            .crack-ext-modal label { display:flex; font-size:13px; font-weight:600; margin-bottom:6px; color:#333; align-items:center; justify-content:space-between;}
-            .crack-ext-modal input, .crack-ext-modal textarea, .crack-ext-modal select { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; box-sizing:border-box; font-family:inherit; pointer-events:auto !important; }
-            .crack-ext-modal .cc { text-align:right; font-size:12px; color:#999; margin-top:4px; }
+            .crack-ext-modal-header h3 { color:#222 !important; margin: 0; font-size: 17px; font-weight: 700;}
+            .crack-ext-modal label { display:flex; font-size:13px; font-weight:600; margin-bottom:6px; color:#333 !important; align-items:center; justify-content:space-between;}
+            .crack-ext-modal input, .crack-ext-modal textarea, .crack-ext-modal select { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; box-sizing:border-box; font-family:inherit; pointer-events:auto !important; background-color: #fff !important; color:#222 !important; }
+            .crack-ext-modal input::placeholder, .crack-ext-modal textarea::placeholder { color:#999 !important; }
+            .crack-ext-modal .cc { text-align:right; font-size:12px; color:#999 !important; margin-top:4px; }
             .crack-ext-modal .fg { margin-bottom:16px; }
             .crack-ext-modal-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
-            .crack-ext-mbtn { padding:10px 24px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; font-size:14px; font-weight:600; pointer-events:auto !important; display:flex; align-items:center; justify-content:center;}
+            .crack-ext-mbtn { padding:10px 24px; border-radius:8px; border:1px solid #ddd; background:#fff; color:#222; cursor:pointer; font-size:14px; font-weight:600; pointer-events:auto !important; display:flex; align-items:center; justify-content:center;}
             .crack-ext-mbtn-p { background:#222; color:#fff; border-color:#222; }
-            .crack-ext-mbtn-p:disabled { background:#ccc; border-color:#ccc; cursor:not-allowed; }
-            .crack-ext-edit-btn { padding:8px 18px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; font-size:14px; font-weight:600; margin-right:8px; transition:all .15s; }
+            .crack-ext-mbtn-p:disabled { background:#eee; border-color:#eee; color:#666 !important; cursor:not-allowed; }
+            .crack-ext-edit-btn { padding:8px 18px; border-radius:8px; border:1px solid #ddd; background:#fff; color:#222; cursor:pointer; font-size:14px; font-weight:600; margin-right:8px; transition:all .15s; }
             .crack-flex-row { display:flex; gap:12px; }
             .crack-flex-row .fg { flex:1; }
             .ai-loading-spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-radius:50%; border-top-color:#fff; animation:spin 1s ease-in-out infinite; margin-right:8px; vertical-align:middle; }
             @keyframes spin { to { transform: rotate(360deg); } }
 
-            /* 모바일 호환성을 위해 버튼 CSS 대폭 개선 */
+            /* 상단 헤더 버튼 모바일 호환 CSS */
             .crack-ext-header-ai-btn {
                 display: inline-flex;
                 align-items: center;
@@ -200,7 +204,7 @@
             }
             .crack-ext-header-ai-btn:hover { opacity: 0.9; transform: translateY(-1px); }
             .crack-ext-header-ai-btn:active { transform: translateY(1px); }
-            .crack-ext-toggle-prompt-btn { font-size:12px; background:none; border:1px solid #ddd; padding:4px 8px; border-radius:4px; cursor:pointer; transition:background 0.2s;}
+            .crack-ext-toggle-prompt-btn { font-size:12px; background:none; color: #333 !important; border:1px solid #ddd; padding:4px 8px; border-radius:4px; cursor:pointer; transition:background 0.2s;}
             .crack-ext-toggle-prompt-btn:hover { background:#f5f5f5;}
         `;
         document.head.appendChild(s);
@@ -505,7 +509,7 @@
                 if(btnGen.textContent === "재생성 (리롤)" || btnGen.textContent === "다시 시도") {
                     // Spinner 제거됨
                 } else {
-                    btnGen.innerHTML = btnGen.textContent; 
+                    btnGen.innerHTML = btnGen.textContent;
                 }
             }
         };
