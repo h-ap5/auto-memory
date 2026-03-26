@@ -327,7 +327,7 @@
         let tempResultContent = "";
 
         var html = '<div class="crack-ext-ai-modal">';
-        html += '<div class="crack-ext-ai-modal-header"><h3>✨ AI 요약 / 단기 기억 추가</h3></div>';
+        html += '<div class="crack-ext-ai-modal-header"><h3>✨ AI 요약 / 장기 기억 추가</h3></div>';
 
         html += '<div class="crack-flex-ai-row" id="ce-ai-top-settings">';
         html += '<div class="fg" style="flex: 2;"><label>Gemini API Key</label><input type="password" id="ce-ai-key" value="' + escapeHtml(savedApiKey) + '"></div>';
@@ -551,7 +551,7 @@
             }
 
             if (successCount > 0) {
-                showToast(`✅ ${successCount}개의 요약이 단기 기억에 추가되었습니다.`);
+                showToast(`✅ ${successCount}개의 요약이 장기 기억에 추가되었습니다.`);
                 overlay.remove();
                 var dialogEl = document.querySelector('[role="dialog"]');
                 if (dialogEl) refreshCurrentTab(dialogEl);
