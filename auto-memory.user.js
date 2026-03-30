@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.3
+// @version      1.4
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -17,7 +17,6 @@
         '단기 기억': 'shortTerm'
     };
 
-    // 사용자가 제공한 기본 프롬프트 상수
     const DEFAULT_PROMPT = `# 📔 장기기억 아카이브 요약 프롬프트
 
 ## 🎯 목적
@@ -98,6 +97,7 @@
     }
 
     function escapeHtml(s) {
+        if (!s) return "";
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
@@ -167,102 +167,52 @@
         return data.candidates[0].content.parts[0].text;
     }
 
-    // --- AI 전용 스타일 (충돌 방지를 위해 -ai 클래스명 사용, 다크모드 대응 포함) ---
     function injectAiStyles() {
         if (document.getElementById('crack-ext-ai-css')) return;
         const s = document.createElement('style');
         s.id = 'crack-ext-ai-css';
         s.textContent = `
             .crack-ext-ai-overlay { background:rgba(0,0,0,.5); z-index:100000; pointer-events:auto !important; }
-
-            /* --- 기본 라이트모드 스타일 --- */
-            .crack-ext-ai-modal { background:#fff !important; border-radius:16px; padding:28px; width:550px; max-width:90vw; box-shadow:0 8px 40px rgba(0,0,0,.2); pointer-events:auto !important; color:#222 !important; }
+            .crack-ext-ai-modal { background:#fff !important; border-radius:16px; padding:28px; width:600px; max-width:90vw; max-height: 90vh; overflow-y: auto; box-shadow:0 8px 40px rgba(0,0,0,.2); pointer-events:auto !important; color:#222 !important; }
             .crack-ext-ai-modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
             .crack-ext-ai-modal-header h3 { margin: 0; color:#222 !important; font-size: 17px; font-weight: 700; }
             .crack-ext-ai-modal label { display:flex; font-size:13px; font-weight:600; margin-bottom:6px; color:#333 !important; align-items:center; justify-content:space-between;}
             .crack-ext-ai-modal input, .crack-ext-ai-modal textarea, .crack-ext-ai-modal select { width:100%; padding:10px 12px; border:1px solid #ddd !important; border-radius:8px; font-size:14px; box-sizing:border-box; font-family:inherit; pointer-events:auto !important; background-color:#fff !important; color:#222 !important; }
             .crack-ext-ai-modal input::placeholder, .crack-ext-ai-modal textarea::placeholder { color:#999 !important; }
-            .crack-ext-ai-modal .cc { text-align:right; font-size:12px; color:#999 !important; margin-top:4px; }
-            .crack-ext-ai-modal .fg { margin-bottom:16px; }
             .crack-ext-ai-modal-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:20px; }
-            .crack-ext-ai-mbtn { padding:10px 24px; border-radius:8px; border:1px solid #ddd !important; background:#fff !important; color:#222 !important; cursor:pointer; font-size:14px; font-weight:600; pointer-events:auto !important; display:flex; align-items:center; justify-content:center; transition: background 0.2s;}
+            .crack-ext-ai-mbtn { padding:10px 24px; border-radius:8px; border:1px solid #ddd !important; background:#fff !important; color:#222 !important; cursor:pointer; font-size:14px; font-weight:600; transition: background 0.2s;}
             .crack-ext-ai-mbtn:hover { background: #f5f5f5 !important; }
             .crack-ext-ai-mbtn-p { background:#222 !important; color:#fff !important; border-color:#222 !important; }
             .crack-ext-ai-mbtn-p:hover { background:#444 !important; }
             .crack-ext-ai-mbtn-p:disabled { background:#ccc !important; border-color:#ccc !important; color:#666 !important; cursor:not-allowed; }
-            .crack-flex-ai-row { display:flex; gap:12px; }
+            .crack-flex-ai-row { display:flex; gap:12px; margin-bottom: 16px; }
             .crack-flex-ai-row .fg { flex:1; }
-            .ai-loading-spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.3); border-radius:50%; border-top-color:#fff; animation:spin 1s ease-in-out infinite; margin-right:8px; vertical-align:middle; }
-            @keyframes spin { to { transform: rotate(360deg); } }
 
-            .crack-ext-header-ai-btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                padding: 0 12px;
-                height: 36px;
-                border-radius: 6px;
-                background: linear-gradient(135deg, #6e8efb, #a777e3) !important;
-                color: white !important;
-                font-weight: 600;
-                font-size: 13px;
-                border: none !important;
-                cursor: pointer;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                transition: transform 0.1s, opacity 0.2s;
-                letter-spacing: -0.3px;
-                white-space: nowrap !important;
-                flex-shrink: 0 !important;
-            }
-            .crack-ext-header-ai-btn:hover { opacity: 0.9; transform: translateY(-1px); }
-            .crack-ext-header-ai-btn:active { transform: translateY(1px); }
+            #ce-ai-preview-container { margin-top: 12px; }
+            #ce-ai-card-nav { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom: 8px; font-size: 13px; font-weight: bold; }
+            #ce-ai-card-nav button { cursor:pointer; background:#f0f0f0; border:1px solid #ddd; border-radius:6px; padding:4px 10px; font-size:12px; transition: background 0.2s; color:#333; }
+            #ce-ai-card-nav button:hover { background:#e4e4e4; }
 
-            #ce-ai-generate { background: linear-gradient(135deg, #6e8efb, #a777e3) !important; color: white !important; border: none !important; }
-            .crack-ext-toggle-prompt-btn { font-size:12px; background:none !important; color: #333 !important; border:1px solid #ddd !important; padding:4px 8px; border-radius:4px; cursor:pointer; transition:background 0.2s;}
-            .crack-ext-toggle-prompt-btn:hover { background:#f5f5f5 !important;}
-            #ce-ai-history-nav { color: #555 !important; }
-            #ce-ai-history-nav button { color: #222 !important; }
-            #ce-ai-result-label { color: #333 !important; }
+            .crack-ext-session-card { background:#f9f9f9 !important; border:1px solid #eee !important; border-radius:8px; padding:12px; font-size:13px; }
+            .crack-ext-session-title { font-weight:bold; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+            .crack-ext-session-content { color:#555 !important; line-height:1.4; white-space: pre-wrap; word-break: break-all; }
+            .crack-ext-char-count { font-size:11px; font-weight:normal; color: #777; }
+            .crack-ext-count-error { color: #e74c3c !important; font-weight:bold; }
 
-            /* --- 다크모드 대응 스타일 --- */
-            body[data-theme="dark"] .crack-ext-ai-modal { background: #242321 !important; color: #F0EFEB !important; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
-            body[data-theme="dark"] .crack-ext-ai-modal-header h3 { color: #F0EFEB !important; }
-            body[data-theme="dark"] .crack-ext-ai-modal label { color: #E5E5E1 !important; }
-            body[data-theme="dark"] .crack-ext-ai-modal input,
-            body[data-theme="dark"] .crack-ext-ai-modal textarea,
-            body[data-theme="dark"] .crack-ext-ai-modal select { background: #141413 !important; color: #F0EFEB !important; border: 1px solid #42413D !important; }
-            body[data-theme="dark"] .crack-ext-ai-modal input::placeholder,
-            body[data-theme="dark"] .crack-ext-ai-modal textarea::placeholder { color: #85837D !important; }
-            body[data-theme="dark"] .crack-ext-ai-modal .cc { color: #85837D !important; }
+            .crack-ext-header-ai-btn { display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; height: 36px; border-radius: 6px; background: linear-gradient(135deg, #6e8efb, #a777e3) !important; color: white !important; font-weight: 600; font-size: 13px; border: none !important; cursor: pointer; transition: transform 0.1s; white-space: nowrap !important; }
 
+            body[data-theme="dark"] .crack-ext-ai-modal { background: #242321 !important; color: #F0EFEB !important; }
+            body[data-theme="dark"] .crack-ext-ai-modal-header h3, body[data-theme="dark"] .crack-ext-ai-modal label { color: #F0EFEB !important; }
+            body[data-theme="dark"] .crack-ext-ai-modal input, body[data-theme="dark"] .crack-ext-ai-modal textarea, body[data-theme="dark"] .crack-ext-ai-modal select { background: #141413 !important; color: #F0EFEB !important; border: 1px solid #42413D !important; }
+
+            body[data-theme="dark"] #ce-ai-card-nav button { background: #2E2D2B !important; color: #F0EFEB !important; border: 1px solid #42413D !important; }
+            body[data-theme="dark"] #ce-ai-card-nav button:hover { background: #42413D !important; }
+
+            body[data-theme="dark"] .crack-ext-session-card { background: #1a1918 !important; border: 1px solid #42413D !important; }
+            body[data-theme="dark"] .crack-ext-session-content { color: #ccc !important; }
             body[data-theme="dark"] .crack-ext-ai-mbtn { background: #2E2D2B !important; color: #F0EFEB !important; border: 1px solid #42413D !important; }
-            body[data-theme="dark"] .crack-ext-ai-mbtn:hover { background: #42413D !important; }
-
-            body[data-theme="dark"] .crack-ext-ai-mbtn-p { background: #F0EFEB !important; color: #1A1918 !important; border-color: #F0EFEB !important; }
-            body[data-theme="dark"] .crack-ext-ai-mbtn-p:hover { background: #E5E5E1 !important; }
-            body[data-theme="dark"] .crack-ext-ai-mbtn-p:disabled { background: #42413D !important; border-color: #42413D !important; color: #85837D !important; }
-
-            body[data-theme="dark"] .crack-ext-toggle-prompt-btn { color: #F0EFEB !important; border: 1px solid #42413D !important; }
-            body[data-theme="dark"] .crack-ext-toggle-prompt-btn:hover { background: #42413D !important; }
-
-            body[data-theme="dark"] #ce-ai-history-nav { color: #a8a69d !important; }
-            body[data-theme="dark"] #ce-ai-history-nav button { color: #F0EFEB !important; }
-            body[data-theme="dark"] #ce-ai-history-nav button:disabled { color: #61605A !important; }
-            body[data-theme="dark"] #ce-ai-result-label { color: #E5E5E1 !important; }
-
-            /* 모바일 반응형 미디어 쿼리 - 하단 버튼 레이아웃 포함 */
-            @media (max-width: 600px) {
-                .crack-flex-ai-row { flex-direction: column; gap: 8px; }
-                .crack-ext-ai-modal { width: 95vw; padding: 20px; }
-                .crack-ext-ai-modal .fg { margin-bottom: 10px; }
-
-                .crack-ext-ai-modal-btns { flex-direction: column; align-items: stretch !important; gap: 8px; justify-content: flex-end; margin-top: 20px; }
-                .crack-ext-ai-modal-btns > div { display: flex; flex-direction: row; gap: 8px; width: 100%; justify-content: space-between; }
-                .crack-ext-ai-modal-btns .crack-ext-ai-mbtn { flex: 1; padding: 10px 12px; font-size: 13px; }
-
-                #ce-ai-result-label-wrapper { flex-direction: column; align-items: flex-start; gap: 4px; }
-                #ce-ai-result-label-wrapper > div { width: 100%; justify-content: space-between; }
-            }
+            body[data-theme="dark"] .crack-ext-ai-mbtn-p { background: #F0EFEB !important; color: #1A1918 !important; }
+            body[data-theme="dark"] .crack-ext-count-error { color: #ff6b6b !important; }
         `;
         document.head.appendChild(s);
     }
@@ -272,59 +222,43 @@
         if (old) old.remove();
         var toast = document.createElement('div');
         toast.id = 'crack-ext-toast';
-        toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-10px);z-index:999999999;background:#1a1a1a;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.25);pointer-events:auto;opacity:0;transition:opacity 0.3s ease,transform 0.3s ease;';
+        toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-10px);z-index:999999999;background:#1a1a1a;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.25);transition:opacity 0.3s,transform 0.3s;';
         toast.textContent = message;
         document.body.appendChild(toast);
         requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(-50%) translateY(0)'; });
-        setTimeout(() => {
-            toast.style.opacity = '0'; toast.style.transform = 'translateX(-50%) translateY(-10px)';
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateX(-50%) translateY(-10px)'; setTimeout(() => toast.remove(), 300); }, 3000);
     }
 
     function refreshCurrentTab(dialog) {
-        // 기존 탭 갱신 로직
-        var btns = dialog.querySelectorAll('button');
-        var activeBtn = null, otherBtn = null;
+        var btns = dialog.querySelectorAll('button'), activeBtn = null, otherBtn = null;
         for (var i = 0; i < btns.length; i++) {
             var txt = btns[i].textContent.trim();
             if (txt === '단기 기억' || txt === '장기 기억') {
                 var bg = getComputedStyle(btns[i]).backgroundColor;
-                var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                if (m && (parseInt(m[1]) + parseInt(m[2]) + parseInt(m[3])) / 3 < 128) {
-                    activeBtn = btns[i];
-                } else {
-                    if (txt === '장기 기억') otherBtn = btns[i];
-                }
+                var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (m && (parseInt(m[1]) + parseInt(m[2]) + parseInt(m[3])) / 3 < 128) activeBtn = btns[i];
+                else if (txt === '장기 기억') otherBtn = btns[i];
             }
         }
         if (!activeBtn) return;
-        if (otherBtn) {
-            otherBtn.click();
-            setTimeout(() => { activeBtn.click(); }, 150);
-        } else {
-            activeBtn.click();
-        }
+        if (otherBtn) { otherBtn.click(); setTimeout(() => { activeBtn.click(); }, 150); }
+        else { activeBtn.click(); }
     }
 
     function showAiSummaryModal() {
         var overlay = document.createElement('div');
         overlay.className = 'crack-ext-ai-overlay';
-        overlay.style.pointerEvents = 'auto';
-        overlay.style.position = 'fixed';
-        overlay.style.inset = '0';
-        overlay.style.display = 'flex';
-        overlay.style.alignItems = 'center';
-        overlay.style.justifyContent = 'center';
+        overlay.style.position = 'fixed'; overlay.style.inset = '0'; overlay.style.display = 'flex'; overlay.style.alignItems = 'center'; overlay.style.justifyContent = 'center';
 
         const savedApiKey = localStorage.getItem('crack_ext_gemini_key') || '';
         const savedModel = localStorage.getItem('crack_ext_gemini_model') || 'gemini-3.1-pro-preview';
         const savedTurnCount = localStorage.getItem('crack_ext_turn_count') || '15';
 
-        let resultHistory = [];
-        let historyIndex = -1;
         let isPromptMode = false;
         let tempResultContent = "";
+
+        let parsedCards = [];
+        let currentCardIndex = 0;
 
         var html = '<div class="crack-ext-ai-modal">';
         html += '<div class="crack-ext-ai-modal-header"><h3>✨ AI 요약 / 장기 기억 추가</h3></div>';
@@ -332,175 +266,153 @@
         html += '<div class="crack-flex-ai-row" id="ce-ai-top-settings">';
         html += '<div class="fg" style="flex: 2;"><label>Gemini API Key</label><input type="password" id="ce-ai-key" value="' + escapeHtml(savedApiKey) + '"></div>';
         html += '<div class="fg" style="flex: 1.5;"><label>모델</label><select id="ce-ai-model">';
-        html += '<option value="gemini-3.1-pro-preview" ' + (savedModel==='gemini-3.1-pro-preview'?'selected':'') + '>3.1 Pro Preview</option>';
-        html += '<option value="gemini-3-flash-preview" ' + (savedModel==='gemini-3-flash-preview'?'selected':'') + '>3 Flash Preview</option>';
-        html += '<option value="gemini-3.1-flash-lite-preview" ' + (savedModel==='gemini-3.1-flash-lite-preview'?'selected':'') + '>3.1 Flash-Lite</option>';
-        html += '<option value="gemini-2.5-pro" ' + (savedModel==='gemini-2.5-pro'?'selected':'') + '>2.5 Pro</option>';
-        html += '<option value="gemini-2.5-flash" ' + (savedModel==='gemini-2.5-flash'?'selected':'') + '>2.5 Flash</option>';
-        html += '<option value="gemini-2.5-flash-lite" ' + (savedModel==='gemini-2.5-flash-lite'?'selected':'') + '>2.5 Flash-Lite</option>';
+        html += '<option value="gemini-3.1-pro-preview" ' + (savedModel === 'gemini-3.1-pro-preview' ? 'selected' : '') + '>3.1 Pro Preview</option>';
+        html += '<option value="gemini-3-flash-preview" ' + (savedModel === 'gemini-3-flash-preview' ? 'selected' : '') + '>3 Flash Preview</option>';
+        html += '<option value="gemini-3.1-flash-lite-preview" ' + (savedModel === 'gemini-3.1-flash-lite-preview' ? 'selected' : '') + '>3.1 Flash-Lite</option>';
+        html += '<option value="gemini-2.5-pro" ' + (savedModel === 'gemini-2.5-pro' ? 'selected' : '') + '>2.5 Pro</option>';
+        html += '<option value="gemini-2.5-flash" ' + (savedModel === 'gemini-2.5-flash' ? 'selected' : '') + '>2.5 Flash</option>';
+        html += '<option value="gemini-2.5-flash-lite" ' + (savedModel === 'gemini-2.5-flash-lite' ? 'selected' : '') + '>2.5 Flash-Lite</option>';
         html += '</select></div>';
         html += '<div class="fg" style="flex: 1;"><label>턴 수</label><input type="number" id="ce-ai-turns" value="' + escapeHtml(savedTurnCount) + '" min="5" max="50"></div>';
         html += '</div>';
 
-        html += '<div class="fg"><label id="ce-ai-result-label-wrapper">';
+        html += '<div class="fg"><label id="ce-ai-result-label-wrapper" style="display:flex; justify-content:space-between;">';
         html += '<span id="ce-ai-result-label">생성 결과</span>';
-
         html += '<div style="display:flex; align-items:center; gap:10px;">';
-        html += '<span id="ce-ai-history-nav" style="display:none; font-size:13px; font-weight:normal; color:#555;">';
-        html += '<button id="ce-ai-prev" style="cursor:pointer; border:none; background:none; padding:0 4px; font-size:12px;">◀</button>';
-        html += '<span id="ce-ai-page" style="margin: 0 4px;">1/1</span>';
-        html += '<button id="ce-ai-next" style="cursor:pointer; border:none; background:none; padding:0 4px; font-size:12px;">▶</button>';
-        html += '</span>';
-        html += '<button id="ce-ai-toggle-prompt" class="crack-ext-toggle-prompt-btn">⚙️ 프롬프트 설정</button>';
-        html += '</div>';
-        html += '</label>';
+        html += '<span id="ce-ai-selection-counter" style="color:#a777e3; font-size:12px; font-weight:normal;"></span>';
+        html += '<button id="ce-ai-toggle-prompt" style="font-size:12px; background:none; border:1px solid #ddd; padding:4px 8px; border-radius:4px; cursor:pointer;">⚙️ 프롬프트 설정</button>';
+        html += '</div></label>';
 
-        html += '<textarea id="ce-ai-result" rows="10" placeholder="생성 버튼을 누르면 요약 결과가 나오고, 직접 써서 추가할 수도 있습니다. 여러 개의 사건을 [제목] 내용 형식으로 적어주면 자동으로 분리해서 추가됩니다."></textarea></div>';
+        html += '<textarea id="ce-ai-result" rows="7" placeholder="생성 버튼을 누르면 요약 결과가 나오고, 직접 써서 추가할 수도 있습니다. 여러 개의 사건을 [제목] 내용 형식으로 적어주면 자동으로 분리해서 추가됩니다."></textarea>';
 
-        // 버튼 레이아웃 1.2 버전 롤백 (justify-content: space-between 적용, div 묶음 변경)
+        html += '<div id="ce-ai-preview-container">';
+        html += '<div id="ce-ai-card-nav" style="display:none;"><button id="ce-ai-card-prev">◀</button><span id="ce-ai-card-page">1 / 1</span><button id="ce-ai-card-next">▶</button></div>';
+        html += '<div id="ce-ai-preview-cards"></div>';
+        html += '</div></div>';
+
         html += '<div class="crack-ext-ai-modal-btns" style="justify-content: space-between; align-items: flex-end;">';
-        html += '<div><button class="crack-ext-ai-mbtn crack-ext-ai-btn" id="ce-ai-generate" style="height: 38px;">요약 생성</button></div>';
-
-        html += '<div style="display:flex; gap:8px; align-items: center;">';
-        html += '<button class="crack-ext-ai-mbtn" id="ce-ai-cancel" style="height: 38px;">취소</button>';
-        html += '<button class="crack-ext-ai-mbtn crack-ext-ai-mbtn-p" id="ce-ai-save" style="height: 38px;">추가하기</button>';
-        html += '</div></div></div>';
+        html += '<div><button class="crack-ext-ai-mbtn" id="ce-ai-generate">요약 생성</button></div>';
+        html += '<div style="display:flex; gap:8px;"><button class="crack-ext-ai-mbtn" id="ce-ai-cancel">취소</button><button class="crack-ext-ai-mbtn crack-ext-ai-mbtn-p" id="ce-ai-save">추가하기</button></div></div></div>';
 
         overlay.innerHTML = html;
         document.body.appendChild(overlay);
 
-        const topSettings = overlay.querySelector('#ce-ai-top-settings');
-        const btnGen = overlay.querySelector('#ce-ai-generate');
-        const btnSave = overlay.querySelector('#ce-ai-save');
-        const btnCancel = overlay.querySelector('#ce-ai-cancel');
-        const inputKey = overlay.querySelector('#ce-ai-key');
-        const inputModel = overlay.querySelector('#ce-ai-model');
-        const inputTurns = overlay.querySelector('#ce-ai-turns');
         const txtResult = overlay.querySelector('#ce-ai-result');
-        const lblResult = overlay.querySelector('#ce-ai-result-label');
+        const selCounter = overlay.querySelector('#ce-ai-selection-counter');
+        const previewCards = overlay.querySelector('#ce-ai-preview-cards');
+        const cardNav = overlay.querySelector('#ce-ai-card-nav');
+        const spanCardPage = overlay.querySelector('#ce-ai-card-page');
+        const btnCardPrev = overlay.querySelector('#ce-ai-card-prev');
+        const btnCardNext = overlay.querySelector('#ce-ai-card-next');
+        const btnSave = overlay.querySelector('#ce-ai-save');
 
-        const btnPrev = overlay.querySelector('#ce-ai-prev');
-        const btnNext = overlay.querySelector('#ce-ai-next');
-        const spanPage = overlay.querySelector('#ce-ai-page');
-        const navContainer = overlay.querySelector('#ce-ai-history-nav');
-        const btnTogglePrompt = overlay.querySelector('#ce-ai-toggle-prompt');
+        function updateSelectionCount() {
+            const selectedText = txtResult.value.substring(txtResult.selectionStart, txtResult.selectionEnd);
+            selCounter.textContent = selectedText.length > 0 ? `(드래그: ${selectedText.length}자)` : '';
+        }
+        txtResult.addEventListener('select', updateSelectionCount);
+        txtResult.addEventListener('keyup', updateSelectionCount);
+        txtResult.addEventListener('mouseup', updateSelectionCount);
 
-        function updateHistoryUI() {
-            if (resultHistory.length > 0 && !isPromptMode) {
-                navContainer.style.display = 'inline-flex';
-                spanPage.textContent = (historyIndex + 1) + '/' + resultHistory.length;
-                btnPrev.disabled = historyIndex === 0;
-                btnNext.disabled = historyIndex === resultHistory.length - 1;
-                // 다크모드는 CSS에서 :disabled 로 처리하므로 인라인 스타일 제거
-                btnPrev.style.color = '';
-                btnNext.style.color = '';
-            } else {
-                navContainer.style.display = 'none';
+        function updatePreviewCards() {
+            if (isPromptMode) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; return; }
+            const content = txtResult.value.trim();
+            if (!content) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; parsedCards = []; return; }
+
+            const blocks = content.split(/\[(.*?)\]/);
+            parsedCards = [];
+
+            for (let i = 1; i < blocks.length; i += 2) {
+                let title = blocks[i].trim();
+                let summary = blocks[i + 1] ? blocks[i + 1].replace(/^[\s\n]*[-*]?\s*/, '').trim() : '';
+                if (title || summary) parsedCards.push({ title, summary });
             }
+
+            if (parsedCards.length === 0 && content) {
+                let summary = content.replace(/^[\s\n]*[-*]?\s*/, '').trim();
+                parsedCards.push({ title: "수동 요약", summary });
+            }
+
+            if (parsedCards.length === 0) {
+                previewCards.innerHTML = ''; cardNav.style.display = 'none'; return;
+            }
+
+            if (currentCardIndex >= parsedCards.length) currentCardIndex = parsedCards.length - 1;
+            if (currentCardIndex < 0) currentCardIndex = 0;
+
+            if (parsedCards.length > 1) {
+                cardNav.style.display = 'flex';
+                spanCardPage.textContent = `${currentCardIndex + 1} / ${parsedCards.length}`;
+            } else {
+                cardNav.style.display = 'none';
+            }
+
+            let mem = parsedCards[currentCardIndex];
+            let tClass = mem.title.length > 20 ? 'crack-ext-count-error' : '';
+            let sClass = mem.summary.length > 300 ? 'crack-ext-count-error' : '';
+
+            let cardHtml = '<div class="crack-ext-session-card">' +
+                '<div class="crack-ext-session-title">' +
+                '<div><span style="color:#888;">[ </span>' + escapeHtml(mem.title) + '<span style="color:#888;"> ]</span></div>' +
+                '<span class="crack-ext-char-count ' + tClass + '">(' + mem.title.length + '/20자)</span>' +
+                '</div>' +
+                '<div class="crack-ext-session-content">' + escapeHtml(mem.summary) +
+                '<div style="text-align:right; margin-top:8px;"><span class="crack-ext-char-count ' + sClass + '">(' + mem.summary.length + '/300자)</span></div>' +
+                '</div>' +
+                '</div>';
+
+            previewCards.innerHTML = cardHtml;
         }
 
-        btnPrev.onclick = (e) => {
-            e.stopPropagation(); e.preventDefault();
-            if (historyIndex > 0) {
-                historyIndex--;
-                txtResult.value = resultHistory[historyIndex];
-                updateHistoryUI();
-            }
-        };
+        txtResult.addEventListener('input', updatePreviewCards);
 
-        btnNext.onclick = (e) => {
-            e.stopPropagation(); e.preventDefault();
-            if (historyIndex < resultHistory.length - 1) {
-                historyIndex++;
-                txtResult.value = resultHistory[historyIndex];
-                updateHistoryUI();
-            }
-        };
+        btnCardPrev.onclick = (e) => { e.preventDefault(); if (currentCardIndex > 0) { currentCardIndex--; updatePreviewCards(); } };
+        btnCardNext.onclick = (e) => { e.preventDefault(); if (currentCardIndex < parsedCards.length - 1) { currentCardIndex++; updatePreviewCards(); } };
+
+        const btnGen = overlay.querySelector('#ce-ai-generate'), btnCancel = overlay.querySelector('#ce-ai-cancel');
+        const inputKey = overlay.querySelector('#ce-ai-key'), inputModel = overlay.querySelector('#ce-ai-model'), inputTurns = overlay.querySelector('#ce-ai-turns');
+        const btnTogglePrompt = overlay.querySelector('#ce-ai-toggle-prompt');
 
         btnTogglePrompt.onclick = (e) => {
             e.stopPropagation(); e.preventDefault();
             isPromptMode = !isPromptMode;
-
             if (isPromptMode) {
-                if (txtResult.value !== "채팅 내역을 불러오는 중..." && txtResult.value !== "Gemini API 요약 중...") {
-                    tempResultContent = txtResult.value;
-                }
-                const curPrompt = localStorage.getItem('crack_ext_custom_prompt') || DEFAULT_PROMPT;
-                txtResult.value = curPrompt;
-
-                lblResult.innerHTML = '프롬프트 설정 <span style="font-size:11px; color:#ff4d4f; font-weight:normal; margin-left:8px;">(수정 시 자동 저장)</span>';
+                tempResultContent = txtResult.value;
+                txtResult.value = localStorage.getItem('crack_ext_custom_prompt') || DEFAULT_PROMPT;
                 btnTogglePrompt.textContent = '돌아가기';
-
-                topSettings.style.display = 'none';
-                btnSave.style.display = 'none';
-                btnGen.style.display = 'none';
-                navContainer.style.display = 'none';
+                overlay.querySelector('#ce-ai-top-settings').style.display = 'none';
+                btnSave.style.display = 'none'; btnGen.style.display = 'none';
+                updatePreviewCards();
             } else {
                 localStorage.setItem('crack_ext_custom_prompt', txtResult.value.trim());
                 txtResult.value = tempResultContent;
-
-                lblResult.textContent = '생성 결과';
                 btnTogglePrompt.textContent = '⚙️ 프롬프트 설정';
-
-                topSettings.style.display = 'flex';
-                btnSave.style.display = 'flex';
-                btnGen.style.display = 'flex';
-                updateHistoryUI();
+                overlay.querySelector('#ce-ai-top-settings').style.display = 'flex';
+                btnSave.style.display = 'block'; btnGen.style.display = 'block';
+                updatePreviewCards();
             }
         };
 
-        ['click', 'mousedown', 'mouseup', 'pointerdown'].forEach(evt => overlay.addEventListener(evt, e => e.stopPropagation()));
-        overlay.addEventListener('click', e => { e.stopPropagation(); if (e.target === overlay) overlay.remove(); });
         btnCancel.onclick = e => { e.stopPropagation(); overlay.remove(); };
+        ['click', 'mousedown', 'mouseup'].forEach(evt => overlay.addEventListener(evt, e => e.stopPropagation()));
 
         btnGen.onclick = async (e) => {
             e.stopPropagation();
-            const apiKey = inputKey.value.trim();
-            const model = inputModel.value;
-            const turns = parseInt(inputTurns.value, 10) || 15;
-
+            const apiKey = inputKey.value.trim(), model = inputModel.value, turns = parseInt(inputTurns.value, 10) || 15;
             if (!apiKey) return alert("API Key를 입력해주세요.");
 
-            localStorage.setItem('crack_ext_gemini_key', apiKey);
-            localStorage.setItem('crack_ext_gemini_model', model);
-            localStorage.setItem('crack_ext_turn_count', turns.toString());
-
-            btnGen.disabled = true;
-            btnSave.disabled = true;
-            btnGen.innerHTML = '<span class="ai-loading-spinner"></span>생성 중...';
-
-            if (txtResult.value.trim() !== "" && resultHistory.length === 0) {
-                resultHistory.push(txtResult.value.trim());
-            }
-
-            txtResult.value = "채팅 내역을 불러오는 중...";
+            localStorage.setItem('crack_ext_gemini_key', apiKey); localStorage.setItem('crack_ext_gemini_model', model); localStorage.setItem('crack_ext_turn_count', turns.toString());
+            btnGen.disabled = true; btnSave.disabled = true; txtResult.value = "요약 중..."; currentCardIndex = 0; updatePreviewCards();
 
             try {
                 const chatLog = await fetchRecentMessages(turns);
-                if (!chatLog) throw new Error("채팅 내역을 불러올 수 없습니다.");
-
-                txtResult.value = "Gemini API 요약 중...";
-                const aiResponse = await callGeminiApi(apiKey, model, chatLog);
-
-                const finalResult = aiResponse.trim();
-                txtResult.value = finalResult;
-
-                resultHistory.push(finalResult);
-                historyIndex = resultHistory.length - 1;
-                updateHistoryUI();
-
-                btnGen.textContent = "재생성 (리롤)";
-                btnSave.disabled = false;
+                if (!chatLog) throw new Error("내역을 불러올 수 없습니다.");
+                const finalResult = await callGeminiApi(apiKey, model, chatLog);
+                txtResult.value = finalResult.trim();
             } catch (err) {
-                txtResult.value = "오류 발생: " + err.message;
-                btnGen.textContent = "다시 시도";
+                txtResult.value = "오류: " + err.message;
             } finally {
-                btnGen.disabled = false;
-                if(btnGen.textContent === "재생성 (리롤)" || btnGen.textContent === "다시 시도") {
-                    // Spinner 제거됨
-                } else {
-                    btnGen.innerHTML = btnGen.textContent;
-                }
+                btnGen.disabled = false; btnSave.disabled = false; btnGen.textContent = "재생성 (리롤)"; updatePreviewCards();
             }
         };
 
@@ -509,45 +421,33 @@
             const content = txtResult.value.trim();
             if (!content) return alert("결과가 비어있습니다.");
 
-            const blocks = content.split(/\[(.*?)\]/);
-            const memories = [];
+            let isExceeded = false;
+            let errorIndex = -1;
 
-            for (let i = 1; i < blocks.length; i += 2) {
-                let title = blocks[i].trim();
-                let summary = blocks[i+1] ? blocks[i+1].replace(/^[\s\n]*[-*]?\s*/, '').trim() : '';
-
-                if (title.length > 20) title = title.substring(0, 20);
-                if (summary.length > 500) summary = summary.substring(0, 500);
-
-                if (title && summary) {
-                    memories.push({ title, summary });
+            for (let i = 0; i < parsedCards.length; i++) {
+                if (parsedCards[i].title.length > 20 || parsedCards[i].summary.length > 300) {
+                    isExceeded = true;
+                    errorIndex = i;
+                    break;
                 }
             }
 
-            if (memories.length === 0) {
-                let title = "수동 요약";
-                let summary = content.replace(/^[\s\n]*[-*]?\s*/, '').trim();
-                if (summary.length > 500) summary = summary.substring(0, 500);
-                memories.push({ title, summary });
+            if (isExceeded) {
+                currentCardIndex = errorIndex;
+                updatePreviewCards();
+                alert("글자 수 제한(제목 20자, 내용 300자)을 초과한 항목이 있습니다.\n붉은색으로 표시된 내용을 수정해 주세요.");
+                return;
             }
 
-            btnSave.disabled = true;
-            btnCancel.disabled = true;
+            btnSave.disabled = true; btnCancel.disabled = true;
             let successCount = 0;
 
-            for (let i = 0; i < memories.length; i++) {
-                btnSave.textContent = `추가 중... (${i + 1}/${memories.length})`;
+            for (let i = 0; i < parsedCards.length; i++) {
+                btnSave.textContent = `추가 중... (${i + 1}/${parsedCards.length})`;
                 await new Promise(resolve => setTimeout(resolve, 50));
-
-                const mem = memories[i];
-                const postBody = { type: 'shortTerm', title: mem.title, summary: mem.summary };
-
-                const res = await apiCall('POST', '/summaries', postBody);
-                if (res) {
-                    successCount++;
-                } else {
-                    alert(`[${mem.title}] 추가 중 오류가 발생했습니다.`);
-                }
+                const res = await apiCall('POST', '/summaries', { type: 'shortTerm', title: parsedCards[i].title, summary: parsedCards[i].summary });
+                if (res) successCount++;
+                else alert(`[${parsedCards[i].title}] 추가 중 오류 발생`);
             }
 
             if (successCount > 0) {
@@ -556,42 +456,25 @@
                 var dialogEl = document.querySelector('[role="dialog"]');
                 if (dialogEl) refreshCurrentTab(dialogEl);
             } else {
-                btnSave.textContent = "추가하기";
-                btnSave.disabled = false;
-                btnCancel.disabled = false;
+                btnSave.textContent = "추가하기"; btnSave.disabled = false; btnCancel.disabled = false;
             }
         };
     }
 
     function injectTopHeaderBtn() {
         const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
-        if (!headerContainer) return;
-
-        if (headerContainer.querySelector('.crack-ext-header-ai-btn')) return;
-
+        if (!headerContainer || headerContainer.querySelector('.crack-ext-header-ai-btn')) return;
         const aiBtn = document.createElement('button');
-        aiBtn.className = 'crack-ext-header-ai-btn';
-        aiBtn.innerHTML = '✨ AI 요약';
-
-        aiBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            showAiSummaryModal();
-        });
-
+        aiBtn.className = 'crack-ext-header-ai-btn'; aiBtn.innerHTML = '✨ AI 요약';
+        aiBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showAiSummaryModal(); });
         headerContainer.prepend(aiBtn);
     }
 
-    function inject() {
-        injectAiStyles(); // AI 모달 전용 스타일 주입
-        injectTopHeaderBtn();
-    }
-
-    // 초기 실행을 위해 MutationObserver 대신 직접 DOM 로드 후 inject 호출.
-    // 기존 스크립트와의 충돌을 최소화하기 위함.
+    function inject() { injectAiStyles(); injectTopHeaderBtn(); }
+    
     function start() {
         var obs = new MutationObserver(() => requestAnimationFrame(inject));
-        obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'data-state'] });
+        obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
         setInterval(inject, 800);
     }
 
