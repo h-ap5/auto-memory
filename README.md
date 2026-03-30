@@ -8,6 +8,8 @@ https://github.com/h-ap5/auto-memory/raw/refs/heads/main/auto-memory.user.js
 ## 업데이트 내역
 ### V1.1
 - 첫 릴리스 입니다.
+- <img width="594" height="522" alt="image" src="https://github.com/user-attachments/assets/8b64d8ab-67c7-4a1a-bc7e-f55122595056" />
+
 ### V1.2
 - 다크모드 시 글자가 하얗게 보이는 오류를 수정했습니다.
 ### V1.3
