@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.4
+// @version      1.4.1
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -133,6 +133,30 @@
                 alert('네트워크 오류: ' + e.message);
                 return null;
             });
+    }
+
+    async function getSummaries() {
+        const summaries = [];
+        const maxLoop = 100;
+        let cursor = null;
+        for (var i = 0; i < maxLoop; i++) {
+            const params = new URLSearchParams({
+                limit:20,
+                type: 'longTerm',
+                orderBy: 'oldest',
+                filter: 'all',
+                ...(cursor && { cursor })
+            });
+
+            const res = await apiCall('GET', `/summaries?${params}`);
+            if (!res || !res.data || !res.data.summaries) break;
+            summaries.push(...res.data.summaries);
+            if (!res.data.nextCursor)
+                return summaries;
+
+            cursor = res.data.nextCursor;
+        }
+        throw new Error("MAX LOOP 초과");
     }
 
     function fetchRecentMessages(limit) {
@@ -291,7 +315,7 @@
         html += '</div></div>';
 
         html += '<div class="crack-ext-ai-modal-btns" style="justify-content: space-between; align-items: flex-end;">';
-        html += '<div><button class="crack-ext-ai-mbtn" id="ce-ai-generate">요약 생성</button></div>';
+        html += '<div style="display:flex; gap:8px;"><button class="crack-ext-ai-mbtn" id="ce-ai-generate">요약 생성</button><button class="crack-ext-ai-mbtn" id="ce-ai-import">불러오기</button></div>';
         html += '<div style="display:flex; gap:8px;"><button class="crack-ext-ai-mbtn" id="ce-ai-cancel">취소</button><button class="crack-ext-ai-mbtn crack-ext-ai-mbtn-p" id="ce-ai-save">추가하기</button></div></div></div>';
 
         overlay.innerHTML = html;
@@ -305,6 +329,7 @@
         const btnCardPrev = overlay.querySelector('#ce-ai-card-prev');
         const btnCardNext = overlay.querySelector('#ce-ai-card-next');
         const btnSave = overlay.querySelector('#ce-ai-save');
+        const btnImport = overlay.querySelector('#ce-ai-import');
 
         function updateSelectionCount() {
             const selectedText = txtResult.value.substring(txtResult.selectionStart, txtResult.selectionEnd);
@@ -457,6 +482,25 @@
                 if (dialogEl) refreshCurrentTab(dialogEl);
             } else {
                 btnSave.textContent = "추가하기"; btnSave.disabled = false; btnCancel.disabled = false;
+            }
+        };
+
+        btnImport.onclick = async (e) => {
+            try {
+                const summaries = await getSummaries();
+                if (!summaries) throw new Error("장기 요약 메모리를 불러올 수 없습니다.");
+                let txtSummaries = ''
+                for (let i = 0; i < summaries.length; i++) {
+                    txtSummaries += '['
+                    txtSummaries += summaries[i].title;
+                    txtSummaries += ']\n'
+                    txtSummaries += summaries[i].summary;
+                    txtSummaries += '\n\n';
+                }
+                txtResult.value = txtSummaries;
+                updatePreviewCards();
+            } catch (err) {
+                alert("오류: " + err.message);
             }
         };
     }
