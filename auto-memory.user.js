@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.5
+// @version      1.5.1
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -135,16 +135,62 @@
             });
     }
 
-    function fetchRecentMessages(limit) {
-        return apiCall('GET', '/messages?limit=' + limit).then(res => {
-            if (!res || !res.data || !res.data.messages) return null;
-            let msgs = res.data.messages.slice().reverse();
-            let chatText = msgs.map(m => {
-                let role = m.role === 'user' ? 'User' : 'Character';
-                return `${role}: ${m.content}`;
-            }).join('\n\n');
-            return chatText;
-        });
+    // --- 무제한(0) 호출을 지원하는 최적화된 메시지 불러오기 로직 ---
+    async function fetchRecentMessages(limit) {
+        let allMessages = [];
+        let currentCursor = null;
+        let requestedLimit = parseInt(limit, 10);
+
+        // 숫자가 아니면 기본값 15, 0이면 무제한으로 설정
+        if (isNaN(requestedLimit)) requestedLimit = 15;
+        const isUnlimited = requestedLimit === 0;
+
+        while (true) {
+            // 한 번에 가져올 개수는 최대 50개 (서버 효율을 위해 분할 요청)
+            let fetchLimit = isUnlimited ? 50 : Math.min(requestedLimit - allMessages.length, 50);
+            let path = '/messages?limit=' + fetchLimit;
+
+            if (currentCursor) {
+                path += '&cursor=' + encodeURIComponent(currentCursor);
+            }
+
+            let res = await apiCall('GET', path);
+
+            // 더 이상 가져올 데이터가 없으면 중단
+            if (!res || !res.data || !res.data.messages || res.data.messages.length === 0) {
+                break;
+            }
+
+            allMessages = allMessages.concat(res.data.messages);
+
+            // 제한이 걸려있고, 목표치에 도달했으면 중단
+            if (!isUnlimited && allMessages.length >= requestedLimit) {
+                break;
+            }
+
+            // 다음 페이지가 존재하면 커서를 갱신하고 계속 진행
+            if (res.data.hasNext && res.data.nextCursor) {
+                currentCursor = res.data.nextCursor;
+            } else {
+                break;
+            }
+        }
+
+        // 제한이 설정된 경우 초과된 부분 정확히 자르기
+        if (!isUnlimited) {
+            allMessages = allMessages.slice(0, requestedLimit);
+        }
+
+        if (allMessages.length === 0) return null;
+
+        // 과거 -> 최신 순으로 정렬하기 위해 배열 뒤집기
+        let msgs = allMessages.reverse();
+        let chatText = msgs.map(m => {
+            let role = m.role === 'user' ? 'User' : 'Character';
+            return `${role}: ${m.content}`;
+        }).join('\n\n');
+
+        return chatText;
     }
 
     async function callGeminiApi(apiKey, model, chatLog) {
@@ -334,7 +380,7 @@
         html += '<option value="gemini-2.5-flash" ' + (savedModel==='gemini-2.5-flash'?'selected':'') + '>2.5 Flash</option>';
         html += '<option value="gemini-2.5-flash-lite" ' + (savedModel==='gemini-2.5-flash-lite'?'selected':'') + '>2.5 Flash-Lite</option>';
         html += '</select></div>';
-        html += '<div class="fg" style="flex: 0.8;"><label>턴 수</label><input type="number" id="ce-ai-turns" value="' + escapeHtml(savedTurnCount) + '" min="5" max="50"></div>';
+        html += '<div class="fg" style="flex: 0.8;"><label>턴 수</label><input type="number" id="ce-ai-turns" value="' + escapeHtml(savedTurnCount) + '" min="0"></div>';
         html += '</div>';
 
         html += '<div class="crack-flex-ai-row" id="ce-ai-firebase-container" style="margin-bottom:16px;' + (savedProvider==='firebase'?'':'display:none;') + '">';
@@ -390,7 +436,6 @@
             const selectedText = txtResult.value.substring(txtResult.selectionStart, txtResult.selectionEnd);
             selCounter.textContent = selectedText.length > 0 ? `(드래그: ${selectedText.length}자)` : '';
         }
-
         txtResult.addEventListener('select', updateSelectionCount);
         txtResult.addEventListener('keyup', updateSelectionCount);
         txtResult.addEventListener('mouseup', updateSelectionCount);
@@ -485,7 +530,8 @@
             const apiKey = inputKey.value.trim();
             const firebaseScript = inputFirebaseScript.value.trim();
             const model = inputModel.value;
-            const turns = parseInt(inputTurns.value, 10) || 15;
+            const turnsVal = parseInt(inputTurns.value, 10);
+            const turns = isNaN(turnsVal) ? 15 : turnsVal;
 
             if (provider === 'google' && !apiKey) return alert("API Key를 입력해주세요.");
             if (provider === 'firebase' && !firebaseScript) return alert("Firebase 스크립트를 입력해주세요.");
