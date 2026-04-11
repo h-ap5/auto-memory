@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.4
+// @version      1.5
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -167,6 +167,64 @@
         return data.candidates[0].content.parts[0].text;
     }
 
+    // --- Firebase Vertex AI 파싱 및 호출 로직 ---
+    function parseVertexContent(scriptStr) {
+        try {
+            const match = scriptStr.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\});/);
+            if (match && match[1]) {
+                return new Function("return " + match[1])();
+            }
+            if (scriptStr.includes("apiKey")) {
+                const startText = "firebaseConfig = {";
+                const startIndex = scriptStr.indexOf(startText);
+                if (startIndex !== -1) {
+                    const endIndex = scriptStr.indexOf("}", startIndex);
+                    if (endIndex !== -1) {
+                        const objStr = scriptStr.substring(startIndex + startText.length - 1, endIndex + 1);
+                        return new Function("return " + objStr)();
+                    }
+                }
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    async function callFirebaseApi(scriptStr, modelId, chatLog) {
+        const config = parseVertexContent(scriptStr);
+        if (!config) {
+            throw new Error("Firebase 스크립트 형식이 올바르지 않습니다. firebaseConfig = { ... }; 부분을 포함해주세요.");
+        }
+        const currentPrompt = localStorage.getItem('crack_ext_custom_prompt') || DEFAULT_PROMPT;
+
+        const { initializeApp } = await import("https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js");
+        const { getAI, getGenerativeModel, VertexAIBackend, HarmBlockThreshold, HarmCategory } = await import("https://www.gstatic.com/firebasejs/12.8.0/firebase-ai.js");
+
+        let app;
+        try {
+            app = initializeApp(config, "crack-ext-" + Date.now());
+        } catch(e) {
+            throw new Error("Firebase 초기화 실패: " + e.message);
+        }
+
+        const ai = getAI(app, { backend: new VertexAIBackend() });
+        const safetySettings = [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.OFF },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.OFF }
+        ];
+
+        const modelWithSys = getGenerativeModel(ai, {
+            model: modelId,
+            systemInstruction: currentPrompt,
+            safetySettings
+        });
+
+        const result = await modelWithSys.generateContent(chatLog);
+        const response = await result.response;
+        return response.text();
+    }
+
     function injectAiStyles() {
         if (document.getElementById('crack-ext-ai-css')) return;
         const s = document.createElement('style');
@@ -253,6 +311,8 @@
         const savedApiKey = localStorage.getItem('crack_ext_gemini_key') || '';
         const savedModel = localStorage.getItem('crack_ext_gemini_model') || 'gemini-3.1-pro-preview';
         const savedTurnCount = localStorage.getItem('crack_ext_turn_count') || '15';
+        const savedProvider = localStorage.getItem('crack_ext_api_provider') || 'google';
+        const savedFirebaseScript = localStorage.getItem('crack_ext_firebase_script') || '';
 
         let isPromptMode = false;
         let tempResultContent = "";
@@ -264,16 +324,21 @@
         html += '<div class="crack-ext-ai-modal-header"><h3>✨ AI 요약 / 장기 기억 추가</h3></div>';
 
         html += '<div class="crack-flex-ai-row" id="ce-ai-top-settings">';
-        html += '<div class="fg" style="flex: 2;"><label>Gemini API Key</label><input type="password" id="ce-ai-key" value="' + escapeHtml(savedApiKey) + '"></div>';
+        html += '<div class="fg" style="flex: 1.2;"><label>API</label><select id="ce-ai-provider"><option value="google" ' + (savedProvider==='google'?'selected':'') + '>Google</option><option value="firebase" ' + (savedProvider==='firebase'?'selected':'') + '>Firebase</option></select></div>';
+        html += '<div class="fg" id="ce-ai-key-container" style="flex: 2;' + (savedProvider==='google'?'':'display:none;') + '"><label>API Key</label><input type="password" id="ce-ai-key" value="' + escapeHtml(savedApiKey) + '"></div>';
         html += '<div class="fg" style="flex: 1.5;"><label>모델</label><select id="ce-ai-model">';
-        html += '<option value="gemini-3.1-pro-preview" ' + (savedModel === 'gemini-3.1-pro-preview' ? 'selected' : '') + '>3.1 Pro Preview</option>';
-        html += '<option value="gemini-3-flash-preview" ' + (savedModel === 'gemini-3-flash-preview' ? 'selected' : '') + '>3 Flash Preview</option>';
-        html += '<option value="gemini-3.1-flash-lite-preview" ' + (savedModel === 'gemini-3.1-flash-lite-preview' ? 'selected' : '') + '>3.1 Flash-Lite</option>';
-        html += '<option value="gemini-2.5-pro" ' + (savedModel === 'gemini-2.5-pro' ? 'selected' : '') + '>2.5 Pro</option>';
-        html += '<option value="gemini-2.5-flash" ' + (savedModel === 'gemini-2.5-flash' ? 'selected' : '') + '>2.5 Flash</option>';
-        html += '<option value="gemini-2.5-flash-lite" ' + (savedModel === 'gemini-2.5-flash-lite' ? 'selected' : '') + '>2.5 Flash-Lite</option>';
+        html += '<option value="gemini-3.1-pro-preview" ' + (savedModel==='gemini-3.1-pro-preview'?'selected':'') + '>3.1 Pro Preview</option>';
+        html += '<option value="gemini-3-flash-preview" ' + (savedModel==='gemini-3-flash-preview'?'selected':'') + '>3 Flash Preview</option>';
+        html += '<option value="gemini-3.1-flash-lite-preview" ' + (savedModel==='gemini-3.1-flash-lite-preview'?'selected':'') + '>3.1 Flash-Lite</option>';
+        html += '<option value="gemini-2.5-pro" ' + (savedModel==='gemini-2.5-pro'?'selected':'') + '>2.5 Pro</option>';
+        html += '<option value="gemini-2.5-flash" ' + (savedModel==='gemini-2.5-flash'?'selected':'') + '>2.5 Flash</option>';
+        html += '<option value="gemini-2.5-flash-lite" ' + (savedModel==='gemini-2.5-flash-lite'?'selected':'') + '>2.5 Flash-Lite</option>';
         html += '</select></div>';
-        html += '<div class="fg" style="flex: 1;"><label>턴 수</label><input type="number" id="ce-ai-turns" value="' + escapeHtml(savedTurnCount) + '" min="5" max="50"></div>';
+        html += '<div class="fg" style="flex: 0.8;"><label>턴 수</label><input type="number" id="ce-ai-turns" value="' + escapeHtml(savedTurnCount) + '" min="5" max="50"></div>';
+        html += '</div>';
+
+        html += '<div class="crack-flex-ai-row" id="ce-ai-firebase-container" style="margin-bottom:16px;' + (savedProvider==='firebase'?'':'display:none;') + '">';
+        html += '<div class="fg" style="flex: 1;"><label>Firebase Vertex AI 스크립트</label><textarea id="ce-ai-firebase-script" rows="2" placeholder="firebaseConfig = { ... }; 형식의 스크립트를 입력해주세요.">' + escapeHtml(savedFirebaseScript) + '</textarea></div>';
         html += '</div>';
 
         html += '<div class="fg"><label id="ce-ai-result-label-wrapper" style="display:flex; justify-content:space-between;">';
@@ -306,25 +371,41 @@
         const btnCardNext = overlay.querySelector('#ce-ai-card-next');
         const btnSave = overlay.querySelector('#ce-ai-save');
 
+        const selProvider = overlay.querySelector('#ce-ai-provider');
+        const contKey = overlay.querySelector('#ce-ai-key-container');
+        const contFirebase = overlay.querySelector('#ce-ai-firebase-container');
+        const inputFirebaseScript = overlay.querySelector('#ce-ai-firebase-script');
+
+        selProvider.onchange = () => {
+            if(selProvider.value === 'google') {
+                contKey.style.display = 'block';
+                contFirebase.style.display = 'none';
+            } else {
+                contKey.style.display = 'none';
+                contFirebase.style.display = 'flex';
+            }
+        };
+
         function updateSelectionCount() {
             const selectedText = txtResult.value.substring(txtResult.selectionStart, txtResult.selectionEnd);
             selCounter.textContent = selectedText.length > 0 ? `(드래그: ${selectedText.length}자)` : '';
         }
+
         txtResult.addEventListener('select', updateSelectionCount);
         txtResult.addEventListener('keyup', updateSelectionCount);
         txtResult.addEventListener('mouseup', updateSelectionCount);
 
         function updatePreviewCards() {
-            if (isPromptMode) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; return; }
+            if(isPromptMode) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; return; }
             const content = txtResult.value.trim();
-            if (!content) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; parsedCards = []; return; }
+            if(!content) { previewCards.innerHTML = ''; cardNav.style.display = 'none'; parsedCards = []; return; }
 
             const blocks = content.split(/\[(.*?)\]/);
             parsedCards = [];
 
             for (let i = 1; i < blocks.length; i += 2) {
                 let title = blocks[i].trim();
-                let summary = blocks[i + 1] ? blocks[i + 1].replace(/^[\s\n]*[-*]?\s*/, '').trim() : '';
+                let summary = blocks[i+1] ? blocks[i+1].replace(/^[\s\n]*[-*]?\s*/, '').trim() : '';
                 if (title || summary) parsedCards.push({ title, summary });
             }
 
@@ -381,6 +462,7 @@
                 txtResult.value = localStorage.getItem('crack_ext_custom_prompt') || DEFAULT_PROMPT;
                 btnTogglePrompt.textContent = '돌아가기';
                 overlay.querySelector('#ce-ai-top-settings').style.display = 'none';
+                if(overlay.querySelector('#ce-ai-firebase-container')) overlay.querySelector('#ce-ai-firebase-container').style.display = 'none';
                 btnSave.style.display = 'none'; btnGen.style.display = 'none';
                 updatePreviewCards();
             } else {
@@ -388,6 +470,7 @@
                 txtResult.value = tempResultContent;
                 btnTogglePrompt.textContent = '⚙️ 프롬프트 설정';
                 overlay.querySelector('#ce-ai-top-settings').style.display = 'flex';
+                if(selProvider.value === 'firebase') overlay.querySelector('#ce-ai-firebase-container').style.display = 'flex';
                 btnSave.style.display = 'block'; btnGen.style.display = 'block';
                 updatePreviewCards();
             }
@@ -398,16 +481,34 @@
 
         btnGen.onclick = async (e) => {
             e.stopPropagation();
-            const apiKey = inputKey.value.trim(), model = inputModel.value, turns = parseInt(inputTurns.value, 10) || 15;
-            if (!apiKey) return alert("API Key를 입력해주세요.");
+            const provider = selProvider.value;
+            const apiKey = inputKey.value.trim();
+            const firebaseScript = inputFirebaseScript.value.trim();
+            const model = inputModel.value;
+            const turns = parseInt(inputTurns.value, 10) || 15;
 
-            localStorage.setItem('crack_ext_gemini_key', apiKey); localStorage.setItem('crack_ext_gemini_model', model); localStorage.setItem('crack_ext_turn_count', turns.toString());
+            if (provider === 'google' && !apiKey) return alert("API Key를 입력해주세요.");
+            if (provider === 'firebase' && !firebaseScript) return alert("Firebase 스크립트를 입력해주세요.");
+
+            localStorage.setItem('crack_ext_api_provider', provider);
+            localStorage.setItem('crack_ext_gemini_key', apiKey);
+            localStorage.setItem('crack_ext_firebase_script', firebaseScript);
+            localStorage.setItem('crack_ext_gemini_model', model);
+            localStorage.setItem('crack_ext_turn_count', turns.toString());
+
             btnGen.disabled = true; btnSave.disabled = true; txtResult.value = "요약 중..."; currentCardIndex = 0; updatePreviewCards();
 
             try {
                 const chatLog = await fetchRecentMessages(turns);
                 if (!chatLog) throw new Error("내역을 불러올 수 없습니다.");
-                const finalResult = await callGeminiApi(apiKey, model, chatLog);
+
+                let finalResult = "";
+                if (provider === 'google') {
+                    finalResult = await callGeminiApi(apiKey, model, chatLog);
+                } else {
+                    finalResult = await callFirebaseApi(firebaseScript, model, chatLog);
+                }
+
                 txtResult.value = finalResult.trim();
             } catch (err) {
                 txtResult.value = "오류: " + err.message;
@@ -471,7 +572,7 @@
     }
 
     function inject() { injectAiStyles(); injectTopHeaderBtn(); }
-    
+
     function start() {
         var obs = new MutationObserver(() => requestAnimationFrame(inject));
         obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
