@@ -252,7 +252,7 @@
             throw new Error("Firebase 초기화 실패: " + e.message);
         }
 
-        const ai = getAI(app, { backend: new VertexAIBackend() });
+        const ai = getAI(app, { backend: new VertexAIBackend('global') });
         const safetySettings = [
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.OFF },
             { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.OFF },
