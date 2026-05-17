@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.5.1
+// @version      1.5.2
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -193,12 +193,28 @@
         return chatText;
     }
 
-    async function callGeminiApi(apiKey, model, chatLog) {
+async function callGeminiApi(apiKey, model, chatLog, turns) {
         const currentPrompt = localStorage.getItem('crack_ext_custom_prompt') || DEFAULT_PROMPT;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+        // 🔥 태업 방지용 강력 지시문 추가
+        const reinforcedPrompt = `[초강력 지시사항]
+제공된 대화는 총 ${turns}턴 분량입니다.
+당신은 대화의 일부(예: 15턴)만 요약하고 출력을 중단해서는 절대 안 됩니다.
+제공된 [채팅 내역]의 처음부터 끝까지 모든 흐름을 파악하고, 누락되는 사건 없이 전부 요약하세요. 분량이 길더라도 태업하지 말고 끝까지 요약본을 생성해야 합니다.
+
+[채팅 내역 시작]
+${chatLog}
+[채팅 내역 끝]`;
+
         const payload = {
             system_instruction: { parts: [{ text: currentPrompt }] },
-            contents: [{ role: "user", parts: [{ text: chatLog }] }]
+            contents: [{ role: "user", parts: [{ text: reinforcedPrompt }] }],
+            generationConfig: {
+                temperature: 0.2, // 딴짓 못하게 온도 낮춤
+                topK: 40,
+                topP: 0.8
+            }
         };
         const response = await fetch(url, {
             method: 'POST',
@@ -235,7 +251,7 @@
         return null;
     }
 
-    async function callFirebaseApi(scriptStr, modelId, chatLog) {
+async function callFirebaseApi(scriptStr, modelId, chatLog, turns) {
         const config = parseVertexContent(scriptStr);
         if (!config) {
             throw new Error("Firebase 스크립트 형식이 올바르지 않습니다. firebaseConfig = { ... }; 부분을 포함해주세요.");
@@ -263,10 +279,25 @@
         const modelWithSys = getGenerativeModel(ai, {
             model: modelId,
             systemInstruction: currentPrompt,
-            safetySettings
+            safetySettings,
+            generationConfig: {
+                temperature: 0.2,
+                topK: 40,
+                topP: 0.8
+            }
         });
 
-        const result = await modelWithSys.generateContent(chatLog);
+        // 🔥 태업 방지용 강력 지시문 추가
+        const reinforcedPrompt = `[초강력 지시사항]
+제공된 대화는 총 ${turns}턴 분량입니다.
+당신은 대화의 일부(예: 15턴)만 요약하고 출력을 중단해서는 절대 안 됩니다.
+제공된 [채팅 내역]의 처음부터 끝까지 모든 흐름을 파악하고, 누락되는 사건 없이 전부 요약하세요. 분량이 길더라도 태업하지 말고 끝까지 요약본을 생성해야 합니다.
+
+[채팅 내역 시작]
+${chatLog}
+[채팅 내역 끝]`;
+
+        const result = await modelWithSys.generateContent(reinforcedPrompt);
         const response = await result.response;
         return response.text();
     }
@@ -550,9 +581,11 @@
 
                 let finalResult = "";
                 if (provider === 'google') {
-                    finalResult = await callGeminiApi(apiKey, model, chatLog);
+                    // turns 변수 추가
+                    finalResult = await callGeminiApi(apiKey, model, chatLog, turns);
                 } else {
-                    finalResult = await callFirebaseApi(firebaseScript, model, chatLog);
+                    // turns 변수 추가
+                    finalResult = await callFirebaseApi(firebaseScript, model, chatLog, turns);
                 }
 
                 txtResult.value = finalResult.trim();
