@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         크랙 요약 메모리 편집 & AI 자동 요약 추가
 // @namespace    https://crack.wrtn.ai/
-// @version      1.5.2
+// @version      1.5.3
 // @description  크랙 내부에서 장기기억용 요약 메모리 생성 및 자동 추가
 // @author       User
 // @match        https://crack.wrtn.ai/*
@@ -641,23 +641,248 @@ ${chatLog}
         };
     }
 
-    function injectTopHeaderBtn() {
-        const headerContainer = document.querySelector('.absolute.z-\\[5\\] .flex.gap-3.items-center');
-        if (!headerContainer || headerContainer.querySelector('.crack-ext-header-ai-btn')) return;
-        const aiBtn = document.createElement('button');
-        aiBtn.className = 'crack-ext-header-ai-btn'; aiBtn.innerHTML = '✨ AI 요약';
-        aiBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showAiSummaryModal(); });
-        headerContainer.prepend(aiBtn);
+    // ------------------------------------------------------------------
+    //  UI 주입 최적화 v1.5.4
+    //  - body 전체 상시 감시 금지
+    //  - 방 이동 직후 React 헤더 재마운트로 버튼이 날아가는 문제 보강
+    //  - route 변경 후 몇 초 동안만 짧은 burst 재주입 + transient observer 유지
+    // ------------------------------------------------------------------
+    const CE_AI_BTN_CLASS = 'crack-ext-header-ai-btn';
+    const TRANSIENT_OBSERVER_MS = 9500;
+    const ROUTE_RETRY_DELAYS = [80, 180, 360, 700, 1100, 1700, 2500, 3600, 5200, 7600, 9400];
+
+    let lastUrlKey = getUrlKey();
+    let transientObserver = null;
+    let transientObserverTimer = 0;
+    let injectRaf = 0;
+    let burstTimers = [];
+    let lastInteractionKick = 0;
+
+    function getUrlKey() {
+        return location.pathname + location.search + location.hash;
     }
 
-    function inject() { injectAiStyles(); injectTopHeaderBtn(); }
+    function isEpisodePage() {
+        return /\/episodes\//.test(location.pathname);
+    }
+
+    function clearBurstTimers() {
+        burstTimers.forEach(timer => clearTimeout(timer));
+        burstTimers = [];
+    }
+
+    function isBadContainer(el) {
+        return !el || !el.isConnected ||
+            !!el.closest('.crack-ext-ai-modal, .crack-ext-ai-overlay, [data-message-group-id], .ProseMirror, textarea, input');
+    }
+
+    function isLikelyTopHeaderContainer(el) {
+        if (isBadContainer(el)) return false;
+
+        const buttonCount = el.querySelectorAll('button').length;
+        if (buttonCount < 1) return false;
+
+        const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text.length > 120) return false;
+
+        // 헤더는 보통 화면 상단에 있으므로, 하단 입력창/채팅 본문 오인식을 줄인다.
+        try {
+            const rect = el.getBoundingClientRect();
+            if (rect && Number.isFinite(rect.top) && rect.top > 180) return false;
+        } catch (_) {}
+
+        return true;
+    }
+
+    function findHeaderContainer() {
+        // 1순위: 기존 원본이 쓰던 정확한 상단 우측 버튼 묶음.
+        const directSelectors = [
+            '.absolute.z-\\[5\\] .flex.gap-3.items-center',
+            'header .flex.gap-3.items-center',
+            '[class*="z-"] .flex.gap-3.items-center'
+        ];
+
+        for (const selector of directSelectors) {
+            const el = document.querySelector(selector);
+            if (isLikelyTopHeaderContainer(el)) return el;
+        }
+
+        // 2순위: 크랙 기본 헤더 버튼을 앵커로 삼아 부모 버튼 묶음을 찾는다.
+        // 사용자가 엔딩 힌트 버튼을 CSS로 숨겨도 DOM에는 남아 있을 수 있어 기준점으로 쓸 수 있다.
+        const anchorSelectors = [
+            'button[aria-label="엔딩 힌트"]',
+            'button[aria-label*="엔딩"]',
+            'button[aria-label*="힌트"]',
+            'button[aria-label*="공유"]',
+            'button[aria-label*="설정"]',
+            'button[aria-label*="메뉴"]'
+        ];
+
+        for (const selector of anchorSelectors) {
+            const anchor = document.querySelector(selector);
+            const container = anchor?.closest?.('.flex.gap-3.items-center, .flex.items-center, [class*="items-center"]');
+            if (isLikelyTopHeaderContainer(container)) return container;
+        }
+
+        // 3순위: 상단 영역 안의 버튼 묶음 중 가장 헤더답게 보이는 것을 선택.
+        const roots = Array.from(document.querySelectorAll('header, .absolute, [class*="z-"]'));
+        for (const root of roots) {
+            if (isBadContainer(root)) continue;
+            const candidates = Array.from(root.querySelectorAll('.flex.gap-3.items-center, .flex.items-center, [class*="items-center"]'));
+            const found = candidates.find(isLikelyTopHeaderContainer);
+            if (found) return found;
+        }
+
+        return null;
+    }
+
+    function removeAiButtons() {
+        document.querySelectorAll('.' + CE_AI_BTN_CLASS).forEach(btn => btn.remove());
+    }
+
+    function createAiButton() {
+        const aiBtn = document.createElement('button');
+        aiBtn.className = CE_AI_BTN_CLASS;
+        aiBtn.type = 'button';
+        aiBtn.innerHTML = '✨ AI 요약';
+        aiBtn.dataset.ceAiSummary = 'true';
+        aiBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            showAiSummaryModal();
+        });
+        return aiBtn;
+    }
+
+    function injectTopHeaderBtn() {
+        if (!isEpisodePage()) {
+            removeAiButtons();
+            return true;
+        }
+
+        const headerContainer = findHeaderContainer();
+        if (!headerContainer) return false;
+
+        const existingInHeader = headerContainer.querySelector('.' + CE_AI_BTN_CLASS);
+        if (existingInHeader) {
+            existingInHeader.style.display = 'inline-flex';
+            return true;
+        }
+
+        // 다른 위치에 잘못 붙은 기존 버튼은 정리하고 현재 헤더에 새로 붙인다.
+        removeAiButtons();
+        headerContainer.prepend(createAiButton());
+        return true;
+    }
+
+    function inject() {
+        injectAiStyles();
+        return injectTopHeaderBtn();
+    }
+
+    function scheduleInject(reason = 'schedule') {
+        if (injectRaf) return;
+        injectRaf = requestAnimationFrame(() => {
+            injectRaf = 0;
+            inject();
+        });
+    }
+
+    function stopTransientObserver() {
+        if (transientObserver) {
+            transientObserver.disconnect();
+            transientObserver = null;
+        }
+        clearTimeout(transientObserverTimer);
+        transientObserverTimer = 0;
+    }
+
+    function startTransientObserver(reason = 'route') {
+        stopTransientObserver();
+        if (!document.body) return;
+
+        transientObserver = new MutationObserver(() => {
+            scheduleInject(reason + ':observer');
+        });
+
+        // 상시 감시가 아니라 방 이동/부팅 직후에만 잠깐 켜진다. attributes/characterData는 보지 않는다.
+        transientObserver.observe(document.body, { childList: true, subtree: true });
+        transientObserverTimer = setTimeout(stopTransientObserver, TRANSIENT_OBSERVER_MS);
+    }
+
+    function runInjectBurst(reason = 'burst') {
+        clearBurstTimers();
+        ROUTE_RETRY_DELAYS.forEach(delay => {
+            const timer = setTimeout(() => scheduleInject(reason + ':' + delay), delay);
+            burstTimers.push(timer);
+        });
+    }
+
+    function handleRouteRefresh(reason = 'route', options = {}) {
+        const urlChanged = getUrlKey() !== lastUrlKey;
+        if (urlChanged) {
+            lastUrlKey = getUrlKey();
+            // 이전 방 헤더에 붙어 있던 버튼 때문에 "성공"으로 오판하지 않도록 먼저 지운다.
+            removeAiButtons();
+        }
+
+        if (options.full || urlChanged) {
+            startTransientObserver(reason);
+            runInjectBurst(reason);
+        } else {
+            scheduleInject(reason);
+        }
+    }
+
+    function installRouteWatcher() {
+        if (window.__ceAiSummaryRouteWatcher154) return;
+        window.__ceAiSummaryRouteWatcher154 = true;
+
+        ['pushState', 'replaceState'].forEach(method => {
+            const original = history[method];
+            if (typeof original !== 'function' || original.__ceAiSummaryWrapped154) return;
+
+            const wrapped = function () {
+                const result = original.apply(this, arguments);
+                setTimeout(() => handleRouteRefresh(method, { full: true }), 0);
+                return result;
+            };
+            wrapped.__ceAiSummaryWrapped154 = true;
+            history[method] = wrapped;
+        });
+
+        window.addEventListener('popstate', () => setTimeout(() => handleRouteRefresh('popstate', { full: true }), 0), { passive: true });
+        window.addEventListener('hashchange', () => setTimeout(() => handleRouteRefresh('hashchange', { full: true }), 0), { passive: true });
+        window.addEventListener('pageshow', () => handleRouteRefresh('pageshow', { full: true }), { passive: true });
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) handleRouteRefresh('visible', { full: true });
+        }, { passive: true });
+
+        // 방 이동 후 첫 클릭/포커스 때 헤더가 늦게 살아나는 케이스 보정.
+        // 클릭마다 무거운 탐색을 하지 않도록 900ms로 제한한다.
+        document.addEventListener('focusin', () => {
+            const now = Date.now();
+            if (now - lastInteractionKick < 900) return;
+            lastInteractionKick = now;
+            handleRouteRefresh('focusin');
+        }, { passive: true });
+
+        document.addEventListener('click', () => {
+            const now = Date.now();
+            if (now - lastInteractionKick < 900) return;
+            lastInteractionKick = now;
+            handleRouteRefresh('click');
+        }, { passive: true, capture: true });
+    }
 
     function start() {
-        var obs = new MutationObserver(() => requestAnimationFrame(inject));
-        obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-        setInterval(inject, 800);
+        injectAiStyles();
+        installRouteWatcher();
+        startTransientObserver('start');
+        runInjectBurst('start');
+        scheduleInject('start');
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
     else start();
 })();
